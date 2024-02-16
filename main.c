@@ -30,30 +30,51 @@ extern void *udp_receive_thread(void *arg);
 // Global list accessible by all threads
 List *messageList;
 
-// Replace with the actual port number you want to use
-#define PORT 5000
+// Define the default port number
+#define DEFAULT_PORT 5000
 
-// Replace with the actual IP address or domain name of the server
-#define IP_ADDRESS "127.0.0.1"
+int main(int argc, char *argv[]) {
+    if (argc != 4) {
+        fprintf(stderr, "Usage: %s [local port] [remote IP] [remote port]\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
 
-int main()
-{
+    int localPort = atoi(argv[1]);
+    char *remoteIP = argv[2];
+    int remotePort = atoi(argv[3]);
+
+    int port = DEFAULT_PORT; // Default port number
     
+    // Check if a command-line argument for the port number is provided
+    if (argc > 1) {
+        port = atoi(argv[1]); // Convert the command-line argument to an integer
+    }
+
     memset(&remoteAddr, 0, sizeof(remoteAddr));
     remoteAddr.sin_family = AF_INET;
-    remoteAddr.sin_port = htons(PORT);
+    remoteAddr.sin_port = htons(port); // Set the port number
     if (inet_pton(AF_INET, "127.0.0.1", &remoteAddr.sin_addr) <= 0)
     {
         // Handle error
         return -1;
     }
 
+    memset(&remoteAddr, 0, sizeof(remoteAddr));
+    remoteAddr.sin_family = AF_INET;
+    remoteAddr.sin_port = htons(remotePort);
+    if (inet_pton(AF_INET, remoteIP, &remoteAddr.sin_addr) <= 0) {
+        perror("inet_pton() failed");
+        return -1;
+    }
+
+
     pthread_mutex_init(&sendQueueMutex, NULL);
     pthread_mutex_init(&receiveQueueMutex, NULL);
     pthread_mutex_init(&listMutex, NULL);
-    pthread_t tid_keyboard, tid_screen, tid_udp_send, tid_udp_receive;
 
-    printf("this is a good start!");
+    printf("this is a good start!\n"); // Add a newline character to the end of the message
+
+    // Create a UDP socket for receiving messages
     udpRecvSockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (udpRecvSockfd < 0) {
         perror("Error creating socket");
@@ -65,8 +86,14 @@ int main()
     memset(&localAddr, 0, sizeof(localAddr));
     localAddr.sin_family = AF_INET;
     localAddr.sin_addr.s_addr = htonl(INADDR_ANY); // Listen on any network interface
-    localAddr.sin_port = htons(PORT); // Listen on the defined port
+    localAddr.sin_port = htons(port); // Listen on the defined port
 
+    int optval = 1;
+    if (setsockopt(udpRecvSockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
+        perror("setsockopt(SO_REUSEADDR) failed");
+        close(udpRecvSockfd);
+        return -1;
+    }   
     // Bind the socket
     if (bind(udpRecvSockfd, (struct sockaddr *)&localAddr, sizeof(localAddr)) < 0) {
         perror("Bind failed");
@@ -85,10 +112,12 @@ int main()
     }
 
     // Create threads
+    pthread_t tid_keyboard, tid_screen, tid_udp_send, tid_udp_receive;
     pthread_create(&tid_keyboard, NULL, keyboard_input_thread, NULL);
     pthread_create(&tid_screen, NULL, screen_output_thread, NULL);
     pthread_create(&tid_udp_send, NULL, udp_send_thread, NULL);
     pthread_create(&tid_udp_receive, NULL, udp_receive_thread, NULL);
+
     // Wait for threads to finish
     pthread_join(tid_keyboard, NULL);
     pthread_join(tid_screen, NULL);
